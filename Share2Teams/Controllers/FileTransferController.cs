@@ -1,78 +1,42 @@
 ﻿using System;
 using System.Configuration;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Mvc;
+using Share2Teams.Models;
 using Share2Teams.Services;
 
 namespace Share2Teams.Controllers
 {
     public class FileTransferController : Controller
     {
-        private readonly FileTransfer _fileTransferService;
-        private readonly PowerShellRunner _powerShellRunner;
-
-        // Controller에서 설정을 직접 가져오는 방식
-        private string SourceSiteUrl => ConfigurationManager.AppSettings["SourceSiteUrl"];
-        private string SourceUserName => ConfigurationManager.AppSettings["SourceUserName"];
-        private string SourcePassword => ConfigurationManager.AppSettings["SourcePassword"];
-        private string Domain => ConfigurationManager.AppSettings["Domain"];
-        private string TargetSiteUrl => ConfigurationManager.AppSettings["TargetSiteUrl"];
-        private string TargetUserName => ConfigurationManager.AppSettings["TargetUserName"];
-        private string TargetPassword => ConfigurationManager.AppSettings["TargetPassword"];
-        private string PowerShellScriptPath => ConfigurationManager.AppSettings["PowerShellScriptPath"];
-
-        public FileTransferController()
-        {
-            // 파일 전송 서비스 초기화
-            _fileTransferService = new FileTransfer(
-                sourceSiteUrl: SourceSiteUrl,
-                sourceUserName: SourceUserName,
-                sourcePassword: SourcePassword,
-                domain: Domain,
-                targetSiteUrl: TargetSiteUrl,
-                targetUserName: TargetUserName,
-                targetPassword: TargetPassword
-            );
-
-            //_powerShellRunner = new PowerShellRunner();
-        }
-
         public ActionResult Index()
         {
-            return View();
+            var model = new FileTransferViewModel();
+            return View(model);
         }
 
         [HttpPost]
-        public async Task<ActionResult> TransferFiles()
+        public async Task<ActionResult> TransferFiles(FileTransferViewModel model)  // 비동기 메서드로 수정
         {
             try
             {
-                // 파일 전송 메서드 호출
-                await _fileTransferService.TransferFilesInFolderAsync(
-                    sourceLibrary: "일반문서",
-                    sourceFolderName: "2020",
-                    targetLibrary: "문서",
-                    targetFolderName: "General"
-                );
+                // 쉼표로 구분된 파일 목록을 List로 변환
+                model.SelectedItems = model.SelectedItemsText.Split(',').Select(f => f.Trim()).ToList();
 
-               
+                // FileTransferService 인스턴스 생성
+                var fileTransferService = new FileTransfer(model);
 
-                ViewBag.Message = "파일 전송과 메타, 권한, 버전 데이터 이전이 성공적으로 완료되었습니다.";
+                // 비동기적으로 파일 이관 작업 수행
+                await fileTransferService.TransferFilesAsync(model.SourceLibrary, model.SelectedItems, model.TargetLibrary, model.TargetFolderName);
+
+                return Json(new { success = true, message = "파일 이관이 완료되었습니다." });
             }
             catch (Exception ex)
             {
-                ViewBag.Error = $"파일 전송 중 오류가 발생했습니다: {ex.Message}";
+                return Json(new { success = false, message = $"오류 발생: {ex.Message}" });
             }
-
-            return View("Index");
-        }
-
-        private async Task RunPowerShellScriptAsync(string scriptPath, string arguments)
-        {
-            await Task.Run(() =>
-            {
-                PowerShellRunner.RunPowerShellScript(scriptPath, arguments);
-            });
         }
     }
+
 }

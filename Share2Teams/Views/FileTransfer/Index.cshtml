@@ -1,20 +1,59 @@
-﻿
+﻿@model Share2Teams.Models.FileTransferViewModel
+
 @{
-    ViewData["Title"] = "File Transfer";
+    ViewBag.Title = "File Transfer";
 }
 
 <h2>File Transfer</h2>
 
-<form method="post" asp-action="TransferFiles">
-    <button type="submit" class="btn btn-primary">파일 전송 시작</button>
-</form>
-
-@if (ViewBag.Message != null)
+@using (Html.BeginForm("TransferFiles", "FileTransfer", FormMethod.Post))
 {
-    <div class="alert alert-success">@ViewBag.Message</div>
-}
+    <div>
+        <label for="SourceUsername">Source Username:</label>
+        @Html.TextBoxFor(m => m.SourceUsername, new { @value = "spfarm@hhi.local" })
+    </div>
+    <div>
+        <label for="SourcePassword">Source Password:</label>
+        @Html.PasswordFor(m => m.SourcePassword, new { @value = "P@ssw0rd1!" })
+    </div>
+    <div>
+        <label for="SourceDomain">Source Domain:</label>
+        @Html.TextBoxFor(m => m.SourceDomain, new { @value = "hhi" })
+    </div>
+    <div>
+        <label for="SourceSiteUrl">Source Site URL:</label>
+        @Html.TextBoxFor(m => m.SourceSiteUrl, new { @value = "http://ecm2016.hhi.local/ksoe/sites/131h9" })
+    </div>
+    <div>
+        <label for="SourceLibrary">Source Library:</label>
+        @Html.TextBoxFor(m => m.SourceLibrary, new { @value = "일반문서" })
+    </div>
+    <div>
+        <label for="SelectedItems">Enter File Names (comma separated):</label>
+        <input type="text" name="SelectedItemsText" placeholder="file1.txt, file2.txt, file3.txt" , new { value="2020" } />
+    </div>
 
-@if (ViewBag.Error != null)
-{
-    <div class="alert alert-danger">@ViewBag.Error</div>
+    <div>
+        <label for="TargetUsername">Target Username:</label>
+        @Html.TextBoxFor(m => m.TargetUsername, new { @value = "a001@neoplus.xyz" })
+    </div>
+    <div>
+        <label for="TargetPassword">Target Password:</label>
+        @Html.PasswordFor(m => m.TargetPassword, new { @value = "P@ssw0rd1!" })
+    </div>
+    <div>
+        <label for="TargetSiteUrl">Target Site URL:</label>
+        @Html.TextBoxFor(m => m.TargetSiteUrl, new { @value = "https://neoplusdevonline.sharepoint.com/sites/msteams_b1aac3" })
+    </div>
+
+    <div>
+        <label for="TargetLibrary">Target Library:</label>
+        @Html.TextBoxFor(m => m.TargetLibrary, new { @value = "문서" })
+    </div>
+    <div>
+        <label for="TargetFolderName">Target Folder Name:</label>
+        @Html.TextBoxFor(m => m.TargetFolderName, new { @value = "General" })
+    </div>
+
+    <button type="submit">Transfer Files</button>
 }

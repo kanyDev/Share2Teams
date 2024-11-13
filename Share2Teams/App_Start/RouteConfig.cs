@@ -18,6 +18,13 @@ namespace Share2Teams
                 url: "{controller}/{action}/{id}",
                 defaults: new { controller = "Home", action = "Index", id = UrlParameter.Optional }
             );
+
+            routes.MapRoute(
+                name: "FileTransfer",
+                url: "FileTransfer/{action}",
+                defaults: new { controller = "FileTransfer", action = "Index" }
+            );
+
         }
     }
 }
