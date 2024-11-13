@@ -34,7 +34,7 @@ namespace Share2Teams.Controllers
                 targetPassword: TargetPassword
             );
 
-            _powerShellRunner = new PowerShellRunner();
+            //_powerShellRunner = new PowerShellRunner();
         }
 
         public ActionResult Index()
@@ -55,22 +55,7 @@ namespace Share2Teams.Controllers
                     targetFolderName: "General"
                 );
 
-                // PowerShell 스크립트 경로 설정
-                string scriptPath = Server.MapPath("~/" + PowerShellScriptPath); // 상대 경로를 절대 경로로 변환
-
-                // PowerShell 스크립트 인수 설정
-                string arguments = $"-sourceSiteUrl \"{SourceSiteUrl}\" " +
-                                   $"-targetSiteUrl \"{TargetSiteUrl}\" " +
-                                   $"-sourceLibraryName \""일반문서" " +
-                                   $"-targetLibraryName \"{targetFileRelativeUrl}\" " +
-                                   $"-fileName \"{targetFileRelativeUrl}\" " +
-                                   $"-sourceUsername \"{SourceUserName}\" " +
-                                   $"-sourcePassword \"{SourcePassword}\" " +
-                                   $"-targetUsername \"{TargetUserName}\" " +
-                                   $"-targetPassword \"{TargetPassword}\"";
-
-                // PowerShell 스크립트 실행
-                await RunPowerShellScriptAsync(scriptPath, arguments);
+               
 
                 ViewBag.Message = "파일 전송과 메타, 권한, 버전 데이터 이전이 성공적으로 완료되었습니다.";
             }

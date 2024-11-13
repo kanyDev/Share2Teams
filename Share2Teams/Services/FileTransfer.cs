@@ -35,8 +35,13 @@ namespace Share2Teams.Services
             this.targetPassword = targetPassword;
         }
 
-
-        public async Task TransferFilesInFolderAsync(string sourceLibrary, string sourceFolderName, string targetLibrary, string targetFolderName)
+        // 파일(들) 혹은 폴더 선택가능
+        public async Task TransferFilesAsync(
+            string sourceLibrary,
+            List<string> sourceItemNames,
+            string targetLibrary,
+            string targetFolderName,
+            bool isFolder)
         {
             using (ClientContext clientContext = new ClientContext(sourceSiteUrl))
             {
@@ -45,16 +50,30 @@ namespace Share2Teams.Services
                 clientContext.Load(oList.RootFolder);
                 await clientContext.ExecuteQueryAsync();
 
-                // 소스 폴더 경로 설정
-                string folderServerRelativeUrl = $"{oList.RootFolder.ServerRelativeUrl}/{sourceFolderName}";
-
-                // 타겟폴더 아래 소스 폴더가 들어가게 설정
-                string targetFolderRelativeUrl = $"{targetFolderName}/{sourceFolderName}";
-
-                // 중첩된 폴더 구조에서 파일 전송
-                await TransferFilesRecursively(clientContext, oList, folderServerRelativeUrl, targetLibrary, targetFolderRelativeUrl);
+                foreach (var sourceItemName in sourceItemNames)
+                {
+                    if (isFolder)
+                    {
+                        // 소스 폴더 경로 설정
+                        string folderServerRelativeUrl = $"{oList.RootFolder.ServerRelativeUrl}/{sourceItemName}";
+                        string targetFolderRelativeUrl = $"{targetFolderName}/{sourceItemName}";
+                        // 중첩된 폴더 구조에서 파일 전송
+                        await TransferFilesRecursively(clientContext, oList, folderServerRelativeUrl, targetLibrary, targetFolderRelativeUrl);
+                    }
+                    else
+                    {
+                        // 파일 처리 로직 추가
+                        string fileServerRelativeUrl = $"{oList.RootFolder.ServerRelativeUrl}/{sourceItemName}";
+                        byte[] fileBytes = DownloadFileFromSource(oList, sourceItemName, fileServerRelativeUrl);
+                        if (fileBytes != null)
+                        {
+                            UploadFileToTarget(targetLibrary, targetFolderName, fileBytes, sourceItemName);
+                        }
+                    }
+                }
             }
         }
+
 
 
         private async Task TransferFilesRecursively(ClientContext clientContext, List oList, string folderServerRelativeUrl, string targetLibrary, string targetFolderRelativeUrl)
