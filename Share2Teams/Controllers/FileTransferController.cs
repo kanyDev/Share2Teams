@@ -21,6 +21,7 @@ namespace Share2Teams.Controllers
         {
             try
             {
+
                 // 쉼표로 구분된 파일 목록을 List로 변환
                 model.SelectedItems = model.SelectedItemsText.Split(',').Select(f => f.Trim()).ToList();
 

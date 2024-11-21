@@ -1,0 +1,34 @@
+﻿@using Share2Teams.Models
+
+@model List<FileVersionInfo>
+
+
+@{
+    ViewData["Title"] = "Download File Version";
+}
+
+<h2>Download File Version</h2>
+
+@if (Model.Count == 0)
+{
+    <p>No versions available for this file.</p>
+}
+else
+{
+    <form method="post" action="/Home/DownloadFileVersionAsync">
+        <label for="versionLabel">Select Version:</label>
+        <select id="versionLabel" name="versionLabel">
+            @foreach (var version in Model)
+            {
+                <option value="@version.VersionLabel">
+                    @version.VersionLabel (Created: @version.Created)
+                    @version.IsCurrentVersion
+                    @version.CheckInComment
+                    @version.Size
+                </option>
+            }
+        </select>
+
+        <button type="submit">Download Selected Version</button>
+    </form>
+}
