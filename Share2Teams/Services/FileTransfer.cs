@@ -55,7 +55,9 @@ namespace Share2Teams.Services
             string sourceLibrary,
             List<string> selectedItems,
             string targetLibrary,
-            string targetFolderName)
+            string targetFolderName,
+            string sourceFolderRelativeUrl = null,
+            string targetFolderRelativeUrl = null)
         {
             using (ClientContext sourceContext = new ClientContext(sourceSiteUrl))
             using (ClientContext targetContext = new ClientContext(targetSiteUrl))
@@ -68,24 +70,38 @@ namespace Share2Teams.Services
                 sourceContext.Load(sourceList.RootFolder);
                 await sourceContext.ExecuteQueryAsync();
 
+                List targetList = targetContext.Web.Lists.GetByTitle(targetLibrary);
+                targetContext.Load(targetList.RootFolder);
+                await targetContext.ExecuteQueryAsync();
+
+                if (sourceFolderRelativeUrl == null)
+                {
+                    sourceFolderRelativeUrl = $"{sourceList.RootFolder.ServerRelativeUrl}";
+                }
+
+                if (targetFolderRelativeUrl == null)
+                {
+                    targetFolderRelativeUrl = $"{targetList.RootFolder.ServerRelativeUrl}/{targetFolderName}";
+                }
 
                 foreach (var selectedItem in selectedItems)
                 {
-                    string itemServerRelativeUrl = $"{sourceList.RootFolder.ServerRelativeUrl}/{selectedItem}";
-
-                    CamlQuery query = new CamlQuery
-                    {
-                        ViewXml = $@"
-                        <View>
-                            <Query>
-                                <Where>
-                                    <Eq>
-                                        <FieldRef Name='FileRef' />
-                                        <Value Type='Text'>{itemServerRelativeUrl}</Value>
-                                    </Eq>
-                                </Where>
-                            </Query>
-                        </View>"
+                    string itemServerRelativeUrl = $"{sourceFolderRelativeUrl}/{selectedItem}"; // ksoe / sites / 131h9 / DocLib / BulkFolder 
+                                                                                                // "/ksoe/sites/131h9/DocLib/BulkFolder/Inner.txt"
+                    CamlQuery query = new CamlQuery 
+                    { 
+                        ViewXml = $@" 
+                            <View> 
+                                <Query> 
+                                    <Where> 
+                                        <Eq> 
+                                            <FieldRef Name='FileLeafRef' /> 
+                                            <Value Type='Text'>{selectedItem}</Value> 
+                                        </Eq>
+                                    </Where> 
+                               </Query> 
+                            </View>"
+                            , FolderServerRelativeUrl = sourceFolderRelativeUrl 
                     };
 
                     ListItemCollection items = sourceList.GetItems(query);
@@ -102,8 +118,41 @@ namespace Share2Teams.Services
                         if (item.FileSystemObjectType == FileSystemObjectType.Folder)
                         {
                             // 폴더일 경우
-                            string newTargetFolder = $"{targetFolderName}/{selectedItem}";
-                            await TransferFilesAsync(sourceLibrary, new List<string> { selectedItem }, targetLibrary, newTargetFolder);
+                            
+
+                            // 대상 폴더 생성
+                            Microsoft.SharePoint.Client.Folder targetFolder = targetContext.Web.GetFolderByServerRelativeUrl(targetFolderRelativeUrl);
+                            Microsoft.SharePoint.Client.Folder newTargetFolder = targetFolder.Folders.Add(selectedItem);
+                            
+                            await targetContext.ExecuteQueryAsync();
+
+                            // 폴더 안의 모든 항목 가져오기
+                            Microsoft.SharePoint.Client.Folder sourceFolder = sourceContext.Web.GetFolderByServerRelativeUrl(itemServerRelativeUrl);
+                            sourceContext.Load(sourceFolder, f => f.Files, f => f.Folders);
+                            await sourceContext.ExecuteQueryAsync();
+
+                            // 하위 파일 및 폴더 목록 생성
+                            var childItems = new List<string>();
+                            foreach (var file in sourceFolder.Files)
+                            {
+                                childItems.Add(file.Name);
+                            }
+                            foreach (var folder in sourceFolder.Folders)
+                            {
+                                childItems.Add(folder.Name);
+                            }
+
+                            foreach (var c in childItems)
+                            {
+                                Debug.Write(c);
+                            }
+
+                            sourceFolderRelativeUrl = $"{sourceFolderRelativeUrl}/{selectedItem}";
+
+                            targetFolderRelativeUrl = $"{targetFolderRelativeUrl}/{selectedItem}";
+
+                            // 재귀 호출
+                            await TransferFilesAsync(sourceLibrary, childItems, targetLibrary, $"{targetFolderName}/{selectedItem}", sourceFolderRelativeUrl, targetFolderRelativeUrl);
                         }
                         else if (item.FileSystemObjectType == FileSystemObjectType.File)
                         {
@@ -230,23 +279,35 @@ namespace Share2Teams.Services
             Microsoft.SharePoint.Client.File sourceFile,
             string targetLibrary,
             string targetFolderName,
-            string targetFileName)
+            string selectedItem,
+            int largeFileThreshold = 1024 * 1024 * 10)
         {
             var fileStream = sourceFile.OpenBinaryStream();
             await sourceContext.ExecuteQueryAsync();
 
             byte[] currentFileBytes = DownloadFile(sourceContext, sourceFileUrl);
 
-            SmallFileUploader(targetContext, targetLibrary, targetFolderName, currentFileBytes, targetFileName);
+            long fileSize = currentFileBytes.Length;
+            if (fileSize > largeFileThreshold)
+            {
+                Debug.WriteLine("Large File Upload");
+                await LargeFileUploader(targetContext, targetLibrary, targetFolderName, selectedItem, currentFileBytes);
+            }
+            else
+            {
+                Debug.WriteLine("Small File Upload");
+                SmallFileUploader(targetContext, targetLibrary, targetFolderName, selectedItem, currentFileBytes);
+            }
+
 
             // 대상 라이브러리와 파일 가져오기
             List targetList = targetContext.Web.Lists.GetByTitle(targetLibrary);
             targetContext.Load(targetList, list => list.RootFolder.ServerRelativeUrl);
             targetContext.ExecuteQuery();
 
-            string targetFolderRelativeUrl = $"{targetList.RootFolder.ServerRelativeUrl}/{targetFolderName}/{targetFileName}";
+            string targetFileRelativeUrl = $"{targetList.RootFolder.ServerRelativeUrl}/{targetFolderName}/{selectedItem}";
 
-            Microsoft.SharePoint.Client.File targetFile = targetContext.Web.GetFileByServerRelativeUrl(targetFolderRelativeUrl);
+            Microsoft.SharePoint.Client.File targetFile = targetContext.Web.GetFileByServerRelativeUrl(targetFileRelativeUrl);
             targetContext.Load(targetFile);
             targetContext.ExecuteQuery();
 
@@ -260,33 +321,29 @@ namespace Share2Teams.Services
         }
 
 
-        private void EnsureFolderExists(ClientContext clientContext, string libraryName, string folderRelativeUrl)
+        private void EnsureFolderExists(ClientContext targetContext, string libraryName, string selectedItem)
         {
-            clientContext.Credentials = new SharePointOnlineCredentials(targetUserName, GetSecureString(targetPassword));
-            List library = clientContext.Web.Lists.GetByTitle(libraryName);
-            clientContext.Load(library.RootFolder);
-            clientContext.ExecuteQuery();
+            List library = targetContext.Web.Lists.GetByTitle(libraryName);
+            targetContext.Load(library.RootFolder);
+            targetContext.ExecuteQuery();
 
-            Microsoft.SharePoint.Client.Folder folder = clientContext.Web.GetFolderByServerRelativeUrl($"{library.RootFolder.ServerRelativeUrl}/{folderRelativeUrl}");
-            clientContext.Load(folder);
+            Microsoft.SharePoint.Client.Folder folder = targetContext.Web.GetFolderByServerRelativeUrl($"{library.RootFolder.ServerRelativeUrl}/{selectedItem}");
+            targetContext.Load(folder);
 
             try
             {
-                clientContext.ExecuteQuery();
+                targetContext.ExecuteQuery();
             }
-            catch (ServerException)
+            catch (ServerException) // 타겟사이트에 해당 폴더가 없음
             {
                 Microsoft.SharePoint.Client.Folder parentFolder = library.RootFolder;
-                string[] folderSegments = folderRelativeUrl.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+                Microsoft.SharePoint.Client.Folder newFolder = parentFolder.Folders.Add(selectedItem);
 
-                foreach (string segment in folderSegments)
-                {
-                    Microsoft.SharePoint.Client.Folder newFolder = parentFolder.Folders.Add(segment);
-                    clientContext.Load(newFolder);
-                    parentFolder = newFolder;
-                }
+                targetContext.Load(newFolder);
+                parentFolder = newFolder; // 이거 꼭 해야함??
+        
 
-                clientContext.ExecuteQuery();
+                targetContext.ExecuteQuery();
             }
         }
 
@@ -307,8 +364,9 @@ namespace Share2Teams.Services
             ClientContext targetContext
             , string targetLibrary
             , string targetFolderName
+            , string selectedItem
             , byte[] fileBytes
-            , string selectedItem)
+            )
         {
             List targetList = targetContext.Web.Lists.GetByTitle(targetLibrary);
             targetContext.Load(targetList, list => list.RootFolder.ServerRelativeUrl);
@@ -324,7 +382,91 @@ namespace Share2Teams.Services
             
         }
 
-        
+        public async Task LargeFileUploader(
+            ClientContext targetContext,
+            string targetLibrary,
+            string targetFolderName,
+            string selectedItem,
+            byte[] currentFileBytes,
+            int blockSize = 1024 * 1024 * 3) // 3MB 블록 크기
+        {
+            var uploadId = Guid.NewGuid();
+            var fileSize = currentFileBytes.Length;
+
+            // 대상 라이브러리와 파일 가져오기
+            List targetList = targetContext.Web.Lists.GetByTitle(targetLibrary);
+            targetContext.Load(targetList, list => list.RootFolder.ServerRelativeUrl); 
+            targetContext.ExecuteQuery();
+            var targetFolder = targetContext.Web.GetFolderByServerRelativeUrl($"{targetList.RootFolder.ServerRelativeUrl}/{targetFolderName}");
+
+
+            ClientResult<long> bytesUploaded = null;
+            long fileoffset = 0;
+            long totalBytesRead = 0;
+            bool first = true;
+
+            using (MemoryStream memoryStream = new MemoryStream(currentFileBytes))
+            {
+                byte[] buffer = new byte[blockSize];
+                int bytesRead;
+
+                while ((bytesRead = memoryStream.Read(buffer, 0, Math.Min(buffer.Length, (int)(fileSize - totalBytesRead)))) > 0)
+                {
+                    totalBytesRead += bytesRead;
+
+                    if (first)
+                    {
+                        using (MemoryStream contentStream = new MemoryStream())
+                        {
+                            FileCreationInformation fileInfo = new FileCreationInformation
+                            {
+                                ContentStream = contentStream,
+                                Url = selectedItem,
+                                Overwrite = true
+                            };
+                            Microsoft.SharePoint.Client.File uploadFile = targetFolder.Files.Add(fileInfo);
+
+                            using (MemoryStream s = new MemoryStream(buffer))
+                            {
+                                bytesUploaded = uploadFile.StartUpload(uploadId, s);
+                                targetContext.ExecuteQuery();
+                                fileoffset = bytesUploaded.Value;
+                            }
+
+                            first = false;
+                        }
+                    }
+                    else
+                    {
+                        var uploadFile = targetContext.Web.GetFileByServerRelativeUrl($"{targetList.RootFolder.ServerRelativeUrl}/{targetFolderName}/{selectedItem}");
+                        if (totalBytesRead == fileSize)
+                        {
+                            using (MemoryStream s = new MemoryStream(buffer, 0, bytesRead))
+                            {
+                                uploadFile = uploadFile.FinishUpload(uploadId, fileoffset, s);
+                                targetContext.ExecuteQuery();
+
+                                Console.WriteLine($"File '{selectedItem}' uploaded successfully.");
+
+                                return;
+                            }
+                        }
+                        else
+                        {
+                            using (MemoryStream s = new MemoryStream(buffer))
+                            {
+                                bytesUploaded = uploadFile.ContinueUpload(uploadId, fileoffset, s);
+                                targetContext.ExecuteQuery();
+                                fileoffset = bytesUploaded.Value;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+
+
         private SecureString GetSecureString(string password)
         {
             SecureString securePassword = new SecureString();
